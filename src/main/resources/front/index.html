@@ -333,7 +333,7 @@
               if(!this.categoryId){
                 return
               }
-              const res = await dishListApi({categoryId:this.categoryId,status:1})
+              const res = await dishListApi({categoryId:this.categoryId,status:1,isDeleted:0})
               if(res.code === 1){
                 let dishList = res.data
                 const cartData  = this.cartData

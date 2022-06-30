@@ -13,12 +13,17 @@ import com.joker.reggie.service.DishService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import static com.joker.reggie.utils.RedisConstants.CACHE_DISHDTO_TTL;
+import static com.joker.reggie.utils.RedisConstants.DISH_NICK_NAME_PREFIX;
 
 @Slf4j
 @RestController
@@ -33,6 +38,9 @@ public class DishFlavorController {
 
     @Autowired
     private DishFlavorService dishFlavorService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     @PostMapping
     public R<String> add(@RequestBody DishDto dishDto){
@@ -112,6 +120,10 @@ public class DishFlavorController {
         // 弊端：只能在原来的基础上做修改，不能添加或者删除口味
 //        dishFlavorService.updateBatchById(dishDto.getFlavors());
         dishService.updateByIdWithFlavor(dishDto);
+        // 修改当前菜品之后，先清除当前菜品对应的redis缓存
+        // 获取当前菜品对应的key
+        String key = DISH_NICK_NAME_PREFIX + dishDto.getCategoryId() + "_" + dishDto.getStatus() + "_" + dishDto.getIsDeleted();
+        redisTemplate.delete(key);
         return R.success("修改菜品成功！");
     }
 
@@ -182,31 +194,42 @@ public class DishFlavorController {
      */
     @GetMapping("/list")
     public R<List<DishDto>> list(Dish dish){
-        List<DishDto> dishDtoList = new ArrayList<>();
+        // 1、判断redis缓存中是否有当前菜品类别信息
+        String key = DISH_NICK_NAME_PREFIX + dish.getCategoryId() + "_" + dish.getStatus() + "_" + dish.getIsDeleted();
+        // TODO 如果序列化value值保存后，再查的时候会报类型转换异常，可能需要反序列化回来再赋给dishDtoList
+        List<DishDto> dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
+        if (dishDtoList != null){
+            // 2、有，直接返回
+            return R.success(dishDtoList);
+        }
+
+        // 3、为空，创建一个新的dishDto
+        dishDtoList = new ArrayList<>();
+
         List<Dish> dishList = null;
-        // 1、根据菜品名称查询对应的菜品信息
+        // 4、根据菜品名称查询对应的菜品信息
         if (dish.getName() != null){
             dishList = dishService.list(
                     new LambdaQueryWrapper<Dish>().like(Dish::getName, dish.getName())
                             .orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime)
-                            // 1.1、添加查询状态为1（在售）的条件
+                            // 4.1、添加查询状态为1（在售）的条件
                             .eq(Dish::getStatus,1)
-                            // 1.2、添加逻辑删除为0（未删除）条件
+                            // 4.2、添加逻辑删除为0（未删除）条件
                             .eq(Dish::getIsDeleted,0)
             );
         }
-        // 2、根据菜品类型查询对应菜品信息
+        // 5、根据菜品类型查询对应菜品信息
         if (dish.getCategoryId() != null){
             dishList = dishService.list(
                     new LambdaQueryWrapper<Dish>().eq(Dish::getCategoryId, dish.getCategoryId())
                             .orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime)
-                            // 1.1、添加查询状态为1（在售）的条件
+                            // 5.1、添加查询状态为1（在售）的条件
                             .eq(Dish::getStatus,1)
-                            // 1.2、添加逻辑删除为0（未删除）条件
+                            // 5.2、添加逻辑删除为0（未删除）条件
                             .eq(Dish::getIsDeleted,0)
             );
         }
-        // 3、将dish转换为dishDto
+        // 6、将dish转换为dishDto
         for (Dish dish1 : dishList) {
             // 3.1、添加菜品口味
             DishDto dishDto = dishService.getByIdWithFlavor(dish1.getId());
@@ -215,6 +238,8 @@ public class DishFlavorController {
             dishDto.setCategoryName(category.getName());
             dishDtoList.add(dishDto);
         }
+        // 7、如果缓存不存在，则将其加入redis缓存中,并设置有效时间为60分钟
+        redisTemplate.opsForValue().set(key,dishDtoList,CACHE_DISHDTO_TTL, TimeUnit.MINUTES);
         return R.success(dishDtoList);
     }
 
