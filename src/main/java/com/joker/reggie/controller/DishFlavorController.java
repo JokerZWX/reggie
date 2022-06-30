@@ -22,8 +22,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.joker.reggie.utils.RedisConstants.CACHE_DISHDTO_TTL;
-import static com.joker.reggie.utils.RedisConstants.DISH_NICK_NAME_PREFIX;
+import static com.joker.reggie.utils.RedisConstants.*;
 
 @Slf4j
 @RestController
@@ -122,7 +121,7 @@ public class DishFlavorController {
         dishService.updateByIdWithFlavor(dishDto);
         // 修改当前菜品之后，先清除当前菜品对应的redis缓存
         // 获取当前菜品对应的key
-        String key = DISH_NICK_NAME_PREFIX + dishDto.getCategoryId() + "_" + dishDto.getStatus() + "_" + dishDto.getIsDeleted();
+        String key = DISH_NAME_PREFIX + dishDto.getCategoryId() + "_" + dishDto.getStatus() + "_" + dishDto.getIsDeleted();
         redisTemplate.delete(key);
         return R.success("修改菜品成功！");
     }
@@ -195,7 +194,7 @@ public class DishFlavorController {
     @GetMapping("/list")
     public R<List<DishDto>> list(Dish dish){
         // 1、判断redis缓存中是否有当前菜品类别信息
-        String key = DISH_NICK_NAME_PREFIX + dish.getCategoryId() + "_" + dish.getStatus() + "_" + dish.getIsDeleted();
+        String key = DISH_NAME_PREFIX + dish.getCategoryId() + "_" + dish.getStatus() + "_" + dish.getIsDeleted();
         // TODO 如果序列化value值保存后，再查的时候会报类型转换异常，可能需要反序列化回来再赋给dishDtoList
         List<DishDto> dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
         if (dishDtoList != null){

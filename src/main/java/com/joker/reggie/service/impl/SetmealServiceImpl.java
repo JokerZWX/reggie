@@ -14,11 +14,14 @@ import com.joker.reggie.service.SetmealDishService;
 import com.joker.reggie.service.SetmealService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static com.joker.reggie.utils.RedisConstants.SETMEAL_NAME_PREFIX;
 
 @Service
 public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> implements SetmealService {
@@ -32,6 +35,9 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
     @Autowired
     private SetmealDishService setmealDishService;
 
+    @Autowired
+    private RedisTemplate redisTemplate;
+
     /**
      * 实现通过id查询到SetmealDto
      * @param id
@@ -43,6 +49,11 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
         return getSetmealDto(id);
     }
 
+    /**
+     * 修改套餐信息，并删除redis中的缓存
+     * @param setmealDto
+     * @return
+     */
     @Override
     @Transactional
     public R<String> updateByIdWithDish(SetmealDto setmealDto) {
@@ -59,17 +70,20 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
         // 4、获取setmealDto中的所有菜品信息
         List<SetmealDish> setmealDishes = setmealDto.getSetmealDishes();
 
-        // 将已经保存到数据生成的setmealId赋给套餐菜品表中的setmeal_id
+        // 5、将已经保存到数据生成的setmealId赋给套餐菜品表中的setmeal_id
         setmealDishes = setmealDishes.stream().map(item -> {
             item.setSetmealId(setmeal.getId());
             return item;
         }).collect(Collectors.toList());
         //
-        // 4、将其保存到setmeal_dish表中
+        // 6、将其保存到setmeal_dish表中
         boolean isSaved = setmealDishService.saveBatch(setmealDishes);
         if (!isSaved){
             return R.error("修改失败！");
         }
+        // 7、修改成功，就清除redis中相应套餐类别信息
+        String key = SETMEAL_NAME_PREFIX + setmealDto.getCategoryId() + "_" + setmealDto.getStatus() + "_" + "0";
+        redisTemplate.delete(key);
         return R.success("修改套餐信息成功！");
     }
 

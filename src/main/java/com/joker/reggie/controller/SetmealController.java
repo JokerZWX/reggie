@@ -11,12 +11,17 @@ import com.joker.reggie.service.SetmealService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import static com.joker.reggie.utils.RedisConstants.CACHE_SETMEAL_TTL;
+import static com.joker.reggie.utils.RedisConstants.SETMEAL_NAME_PREFIX;
 
 @Slf4j
 @RestController
@@ -28,6 +33,9 @@ public class SetmealController {
 
     @Autowired
     private SetmealDishService setmealDishService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     @GetMapping("/page")
     public R<Page> page(int page, int pageSize,String name){
@@ -176,16 +184,28 @@ public class SetmealController {
      * @return
      */
     @GetMapping("/list")
+//    @Cacheable(value = "setmealCache",key = "#setmeal.categoryId + '_' + #setmeal.status + '_' + #setmeal.isDeleted")
     public R<List<Setmeal>> list(Long categoryId,int status){
-        // 1、声明条件
+        // 1、判断当前套餐类别信息是否存在redis中
+        String key = SETMEAL_NAME_PREFIX + categoryId + "_" + status + "_" + "0";
+        List<Setmeal> list = (List<Setmeal>) redisTemplate.opsForValue().get(key);
+        if (null != list && !list.isEmpty()){
+            // 2、不为空，直接返回
+            return R.success(list);
+        }
+        // 3、为空的话，就创建一个新的list对象
+        list = new ArrayList<>();
+        // 4、声明条件
         LambdaQueryWrapper<Setmeal> lambdaQueryWrapper = new LambdaQueryWrapper<>();
-        // 2、查询status为0（正在销售）、isDeleted为0（未删除）、按时间先后顺序排列的套餐类别对应的套餐信息
+        // 5、查询status为0（正在销售）、isDeleted为0（未删除）、按时间先后顺序排列的套餐类别对应的套餐信息
         lambdaQueryWrapper.eq(Setmeal::getCategoryId,categoryId)
                 .eq(Setmeal::getStatus,status)
                 .eq(Setmeal::getIsDeleted,0);
         lambdaQueryWrapper.orderByDesc(Setmeal::getUpdateTime);
-        // 2、查询相应套餐信息
-        List<Setmeal> list = setmealService.list(lambdaQueryWrapper);
+        // 6、查询相应套餐信息
+        list = setmealService.list(lambdaQueryWrapper);
+        // 7、保存到redis中,并设置60分钟的有效时间
+        redisTemplate.opsForValue().set(key,list,CACHE_SETMEAL_TTL, TimeUnit.MINUTES);
         return R.success(list);
     }
 }
