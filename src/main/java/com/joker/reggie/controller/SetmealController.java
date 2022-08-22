@@ -178,7 +178,7 @@ public class SetmealController {
     }
 
     /**
-     * // 根据套餐类别获取相应的套餐信息
+     * 根据套餐类别获取相应的套餐信息
      * @param categoryId
      * @param status
      * @return
