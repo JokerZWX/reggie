@@ -4,6 +4,8 @@ import com.alibaba.fastjson.JSON;
 import com.joker.reggie.common.BaseContext;
 import com.joker.reggie.common.R;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.util.AntPathMatcher;
 
 import javax.servlet.*;
@@ -11,6 +13,9 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+
+import static com.joker.reggie.utils.RedisConstants.LOGIN_USER_KEY;
+
 // 设置过滤器的名称和需要过滤的url请求
 @WebFilter(filterName = "loginCheckFilter",urlPatterns = "/*")
 @Slf4j
@@ -18,6 +23,9 @@ public class LoginCheckFilter implements Filter {
 
     //路径匹配器，支持通配符匹配路径
     public static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
@@ -38,7 +46,7 @@ public class LoginCheckFilter implements Filter {
           "/common/**",
             //下面是移动端请求
           "/user/sendMsg",
-          "/user/login",
+          "/user/login"
         };
         // 2、判断本次请求是否需要处理
         boolean check = check(urls, uri);
@@ -63,7 +71,11 @@ public class LoginCheckFilter implements Filter {
         }
 
         // 4.2、需要处理，判断当前的前台用户登录状态，如果已登录则直接放行
-        Long userId = (Long) request.getSession().getAttribute("user");
+//        Long userId = (Long) request.getSession().getAttribute("user");
+        // 拿到登录的key
+        String phone = request.getSession().getAttribute("phone").toString();
+        String userKey = LOGIN_USER_KEY + phone;
+        Long userId = (Long) redisTemplate.opsForValue().get(userKey);
         if (userId != null) {
             log.info("用户已登录，用户id为：{}", userId);
             BaseContext.setCurrentId(userId);
