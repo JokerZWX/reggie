@@ -1,5 +1,6 @@
 package com.joker.reggie.controller;
 
+import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -206,54 +207,94 @@ public class DishFlavorController {
             return R.error("你要查询的菜品信息不存在");
         }
 
-        // 3、为null，创建一个新的dishDto
-        dishDtoList = new ArrayList<>();
+        // 3、实现缓存重建
+        // 3.1、给每个套餐设置一把锁
+        String lockKey = LOCK_DISH_KEY + dish.getId();
+        try {
+            // 3.2、获取锁
+            boolean isLock = tryLock(lockKey);
+            while (!isLock) {
+                // 3.3、获取锁失败，休眠50毫秒再重试
+                TimeUnit.MILLISECONDS.sleep(50);
+            }
+            // 3.4、再次判断redis中是否有缓存，做一个二次检查
+            if (dishDtoList != null && !dishDtoList.isEmpty()){
+                // 有，直接返回
+                return R.success(dishDtoList);
+            }
 
-        List<Dish> dishList = null;
-        // 4、根据菜品名称查询对应的菜品信息
-        if (dish.getName() != null){
-            dishList = dishService.list(
-                    new LambdaQueryWrapper<Dish>().like(Dish::getName, dish.getName())
-                            .orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime)
-                            // 4.1、添加查询状态为1（在售）的条件
-                            .eq(Dish::getStatus,1)
-                            // 4.2、添加逻辑删除为0（未删除）条件
-                            .eq(Dish::getIsDeleted,0)
-            );
-            if (dishList.isEmpty()){
-                // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
-                redisTemplate.opsForValue().set(key,dishList, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
-                return null;
+            // 4、为null，创建一个新的dishDto
+            dishDtoList = new ArrayList<>();
+
+            List<Dish> dishList = null;
+            // 5、根据菜品名称查询对应的菜品信息
+            if (dish.getName() != null){
+                dishList = dishService.list(
+                        new LambdaQueryWrapper<Dish>().like(Dish::getName, dish.getName())
+                                .orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime)
+                                // 4.1、添加查询状态为1（在售）的条件
+                                .eq(Dish::getStatus,1)
+                                // 4.2、添加逻辑删除为0（未删除）条件
+                                .eq(Dish::getIsDeleted,0)
+                );
+                if (dishList.isEmpty()){
+                    // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
+                    redisTemplate.opsForValue().set(key,dishList, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+                    return null;
+                }
             }
-        }
-        // 5、根据菜品类型查询对应菜品信息
-        if (dish.getCategoryId() != null){
-            dishList = dishService.list(
-                    new LambdaQueryWrapper<Dish>().eq(Dish::getCategoryId, dish.getCategoryId())
-                            .orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime)
-                            // 5.1、添加查询状态为1（在售）的条件
-                            .eq(Dish::getStatus,1)
-                            // 5.2、添加逻辑删除为0（未删除）条件
-                            .eq(Dish::getIsDeleted,0)
-            );
-            if (dishList.isEmpty()){
-                // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
-                redisTemplate.opsForValue().set(key,dishList, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
-                return null;
+            // 6、根据菜品类型查询对应菜品信息
+            if (dish.getCategoryId() != null){
+                dishList = dishService.list(
+                        new LambdaQueryWrapper<Dish>().eq(Dish::getCategoryId, dish.getCategoryId())
+                                .orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime)
+                                // 5.1、添加查询状态为1（在售）的条件
+                                .eq(Dish::getStatus,1)
+                                // 5.2、添加逻辑删除为0（未删除）条件
+                                .eq(Dish::getIsDeleted,0)
+                );
+                if (dishList.isEmpty()){
+                    // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
+                    redisTemplate.opsForValue().set(key,dishList, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+                    return null;
+                }
             }
+            // 7、将dish转换为dishDto
+            for (Dish dish1 : dishList) {
+                // 3.1、添加菜品口味
+                DishDto dishDto = dishService.getByIdWithFlavor(dish1.getId());
+                // 3.2、添加菜品类型名称
+                Category category = categoryService.getById(dish1.getCategoryId());
+                dishDto.setCategoryName(category.getName());
+                dishDtoList.add(dishDto);
+            }
+            // 8、如果缓存不存在，则将其加入redis缓存中,并设置有效时间为60分钟
+            redisTemplate.opsForValue().set(key,dishDtoList,CACHE_DISHDTO_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            unLock(lockKey);
         }
-        // 6、将dish转换为dishDto
-        for (Dish dish1 : dishList) {
-            // 3.1、添加菜品口味
-            DishDto dishDto = dishService.getByIdWithFlavor(dish1.getId());
-            // 3.2、添加菜品类型名称
-            Category category = categoryService.getById(dish1.getCategoryId());
-            dishDto.setCategoryName(category.getName());
-            dishDtoList.add(dishDto);
-        }
-        // 7、如果缓存不存在，则将其加入redis缓存中,并设置有效时间为60分钟
-        redisTemplate.opsForValue().set(key,dishDtoList,CACHE_DISHDTO_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+        // 9、返回菜品信息及其口味
         return R.success(dishDtoList);
+    }
+
+    /**
+     * 获取互斥锁
+     * @param key
+     * @return
+     */
+    private boolean tryLock(String key) {
+        Boolean lock = redisTemplate.opsForValue().setIfAbsent(key, "1", CACHE_LOCK_TTL, TimeUnit.SECONDS);
+        return BooleanUtil.isTrue(lock);
+    }
+
+    /**
+     * 释放互斥锁
+     */
+    private void unLock(String key){
+        redisTemplate.delete(key);
     }
 
 }

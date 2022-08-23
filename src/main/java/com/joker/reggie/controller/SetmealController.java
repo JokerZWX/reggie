@@ -1,5 +1,6 @@
 package com.joker.reggie.controller;
 
+import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -197,25 +198,65 @@ public class SetmealController {
             // 为空，则给出提示信息
             return R.error("你要查询的套餐不存在！");
         }
-        // 3、为null的话，就创建一个新的list对象
-        list = new ArrayList<>();
-        // 4、声明条件
-        LambdaQueryWrapper<Setmeal> lambdaQueryWrapper = new LambdaQueryWrapper<>();
-        // 5、查询status为0（正在销售）、isDeleted为0（未删除）、按时间先后顺序排列的套餐类别对应的套餐信息
-        lambdaQueryWrapper.eq(Setmeal::getCategoryId,categoryId)
-                .eq(Setmeal::getStatus,status)
-                .eq(Setmeal::getIsDeleted,0);
-        lambdaQueryWrapper.orderByDesc(Setmeal::getUpdateTime);
-        // 6、查询相应套餐信息
-        list = setmealService.list(lambdaQueryWrapper);
-        if (list.isEmpty()) {
-            // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
-            // 给过期时间设置随机值，避免缓存雪崩
-            redisTemplate.opsForValue().set(key,list, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
-            return null;
+        // 3、实现缓存重建
+        // 3.1、给每个套餐设置一把锁
+        String lockKey = LOCK_SETMEAL_KEY + categoryId;
+        try {
+            // 3.2、获取互斥锁
+            boolean isLock = tryLock(lockKey);
+            while (!isLock){
+                // 3.3、获取锁失败，休眠50毫秒再重试
+                TimeUnit.MILLISECONDS.sleep(50);
+            }
+            // 3.4、再次判断redis中是否有缓存，做一个二次检查
+            if (null != list && !list.isEmpty()){
+                // 2、不为空，直接返回
+                return R.success(list);
+            }
+            // 模拟重建的延时 因为这是在本机操作，获取数据较快。
+            Thread.sleep(200);
+            // 3、为null的话，就创建一个新的list对象
+            list = new ArrayList<>();
+            // 4、声明条件
+            LambdaQueryWrapper<Setmeal> lambdaQueryWrapper = new LambdaQueryWrapper<>();
+            // 5、查询status为0（正在销售）、isDeleted为0（未删除）、按时间先后顺序排列的套餐类别对应的套餐信息
+            lambdaQueryWrapper.eq(Setmeal::getCategoryId,categoryId)
+                    .eq(Setmeal::getStatus,status)
+                    .eq(Setmeal::getIsDeleted,0);
+            lambdaQueryWrapper.orderByDesc(Setmeal::getUpdateTime);
+            // 6、查询相应套餐信息
+            list = setmealService.list(lambdaQueryWrapper);
+            if (list.isEmpty()) {
+                // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
+                // 给过期时间设置随机值，避免缓存雪崩
+                redisTemplate.opsForValue().set(key,list, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+                return null;
+            }
+            // 7、有数据，则保存到redis中,并设置60-62分钟的有效时间
+            redisTemplate.opsForValue().set(key,list,CACHE_SETMEAL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            unLock(lockKey);
         }
-        // 7、有数据，则保存到redis中,并设置60-62分钟的有效时间
-        redisTemplate.opsForValue().set(key,list,CACHE_SETMEAL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+        // 8、返回套餐信息
         return R.success(list);
+    }
+
+    /**
+     * 获取互斥锁
+     * @param key
+     * @return
+     */
+    private boolean tryLock(String key) {
+        Boolean lock = redisTemplate.opsForValue().setIfAbsent(key, "1", CACHE_LOCK_TTL, TimeUnit.SECONDS);
+        return BooleanUtil.isTrue(lock);
+    }
+
+    /**
+     * 释放互斥锁
+     */
+    private void unLock(String key){
+        redisTemplate.delete(key);
     }
 }
