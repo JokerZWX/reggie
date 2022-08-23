@@ -11,6 +11,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class RedisConfig extends CachingConfigurerSupport {
 
+
+    /**
+     * 配置分布式锁
+     * @param redisConnectionFactory
+     * @return
+     */
+    /*@Bean
+    public RedissonClient redissonClient(){
+        // 配置类
+        Config config = new Config();
+        // 添加Redis地址和密码
+        config.useSingleServer().setAddress("redis://192.168.209.137:6379").setPassword("123123");
+        // 创建客户端
+        return Redisson.create(config);
+    }*/
+
     @Bean
     public RedisTemplate<Object,Object> redisTemplate(RedisConnectionFactory redisConnectionFactory){
         RedisTemplate<Object,Object> redisTemplate = new RedisTemplate<>();

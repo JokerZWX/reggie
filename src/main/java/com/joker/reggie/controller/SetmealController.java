@@ -20,8 +20,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.joker.reggie.utils.RedisConstants.CACHE_SETMEAL_TTL;
-import static com.joker.reggie.utils.RedisConstants.SETMEAL_NAME_PREFIX;
+import static com.joker.reggie.utils.RedisConstants.*;
 
 @Slf4j
 @RestController
@@ -187,13 +186,17 @@ public class SetmealController {
 //    @Cacheable(value = "setmealCache",key = "#setmeal.categoryId + '_' + #setmeal.status + '_' + #setmeal.isDeleted")
     public R<List<Setmeal>> list(Long categoryId,int status){
         // 1、判断当前套餐类别信息是否存在redis中
-        String key = SETMEAL_NAME_PREFIX + categoryId + "_" + status + "_" + "0";
+        String key = SETMEAL_NAME_PREFIX + categoryId + "_" + status + "_" + "1";
         List<Setmeal> list = (List<Setmeal>) redisTemplate.opsForValue().get(key);
         if (null != list && !list.isEmpty()){
             // 2、不为空，直接返回
             return R.success(list);
         }
-        // 3、为空的话，就创建一个新的list对象
+        if (list != null) {
+            // 为空，则给出提示信息
+            return R.error("你要查询的套餐不存在！");
+        }
+        // 3、为null的话，就创建一个新的list对象
         list = new ArrayList<>();
         // 4、声明条件
         LambdaQueryWrapper<Setmeal> lambdaQueryWrapper = new LambdaQueryWrapper<>();
@@ -204,7 +207,12 @@ public class SetmealController {
         lambdaQueryWrapper.orderByDesc(Setmeal::getUpdateTime);
         // 6、查询相应套餐信息
         list = setmealService.list(lambdaQueryWrapper);
-        // 7、保存到redis中,并设置60分钟的有效时间
+        if (list.isEmpty()) {
+            // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
+            redisTemplate.opsForValue().set(key,list, CACHE_NULL_TTL, TimeUnit.MINUTES);
+            return null;
+        }
+        // 7、有数据，则保存到redis中,并设置60分钟的有效时间
         redisTemplate.opsForValue().set(key,list,CACHE_SETMEAL_TTL, TimeUnit.MINUTES);
         return R.success(list);
     }

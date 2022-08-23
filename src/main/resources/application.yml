@@ -50,6 +50,7 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: ASSIGN_ID
+  type-aliases-package: com.joker.reggie.entity # 别名扫描包
 reggie:
   path: D:\images\
 

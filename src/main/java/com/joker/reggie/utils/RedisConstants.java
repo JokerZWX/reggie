@@ -11,8 +11,12 @@ public class RedisConstants {
     public static final Long CACHE_CODE_TTL = 5L;
     public static final Long CACHE_DISHDTO_TTL = 60L;
     public static final Long CACHE_SETMEAL_TTL = 60L;
+    public static final Long CACHE_NULL_TTL = 2L;
 
     public static final String USER_NICK_NAME_PREFIX = "user_";
     public static final String DISH_NAME_PREFIX = "dish_";
     public static final String SETMEAL_NAME_PREFIX = "setmeal_";
+
+    // 秒杀所需常量
+    public static final String SECKILL_STOCK_KEY = "seckill:stock:";
 }
