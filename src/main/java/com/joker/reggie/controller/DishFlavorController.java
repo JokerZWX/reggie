@@ -1,5 +1,6 @@
 package com.joker.reggie.controller;
 
+import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.joker.reggie.common.R;
@@ -195,14 +196,17 @@ public class DishFlavorController {
     public R<List<DishDto>> list(Dish dish){
         // 1、判断redis缓存中是否有当前菜品类别信息
         String key = DISH_NAME_PREFIX + dish.getCategoryId() + "_" + dish.getStatus() + "_" + dish.getIsDeleted();
-        // TODO 如果序列化value值保存后，再查的时候会报类型转换异常，可能需要反序列化回来再赋给dishDtoList
         List<DishDto> dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
-        if (dishDtoList != null){
+        if (dishDtoList != null && !dishDtoList.isEmpty()){
             // 2、有，直接返回
             return R.success(dishDtoList);
         }
+        if (dishDtoList != null){
+            // 为空，给出错误提示信息
+            return R.error("你要查询的菜品信息不存在");
+        }
 
-        // 3、为空，创建一个新的dishDto
+        // 3、为null，创建一个新的dishDto
         dishDtoList = new ArrayList<>();
 
         List<Dish> dishList = null;
@@ -216,6 +220,11 @@ public class DishFlavorController {
                             // 4.2、添加逻辑删除为0（未删除）条件
                             .eq(Dish::getIsDeleted,0)
             );
+            if (dishList.isEmpty()){
+                // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
+                redisTemplate.opsForValue().set(key,dishList, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+                return null;
+            }
         }
         // 5、根据菜品类型查询对应菜品信息
         if (dish.getCategoryId() != null){
@@ -227,6 +236,11 @@ public class DishFlavorController {
                             // 5.2、添加逻辑删除为0（未删除）条件
                             .eq(Dish::getIsDeleted,0)
             );
+            if (dishList.isEmpty()){
+                // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
+                redisTemplate.opsForValue().set(key,dishList, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
+                return null;
+            }
         }
         // 6、将dish转换为dishDto
         for (Dish dish1 : dishList) {
@@ -238,7 +252,7 @@ public class DishFlavorController {
             dishDtoList.add(dishDto);
         }
         // 7、如果缓存不存在，则将其加入redis缓存中,并设置有效时间为60分钟
-        redisTemplate.opsForValue().set(key,dishDtoList,CACHE_DISHDTO_TTL, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(key,dishDtoList,CACHE_DISHDTO_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
         return R.success(dishDtoList);
     }
 

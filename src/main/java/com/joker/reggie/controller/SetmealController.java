@@ -1,5 +1,6 @@
 package com.joker.reggie.controller;
 
+import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.joker.reggie.common.R;
@@ -186,7 +187,7 @@ public class SetmealController {
 //    @Cacheable(value = "setmealCache",key = "#setmeal.categoryId + '_' + #setmeal.status + '_' + #setmeal.isDeleted")
     public R<List<Setmeal>> list(Long categoryId,int status){
         // 1、判断当前套餐类别信息是否存在redis中
-        String key = SETMEAL_NAME_PREFIX + categoryId + "_" + status + "_" + "1";
+        String key = SETMEAL_NAME_PREFIX + categoryId + "_" + status + "_" + "0";
         List<Setmeal> list = (List<Setmeal>) redisTemplate.opsForValue().get(key);
         if (null != list && !list.isEmpty()){
             // 2、不为空，直接返回
@@ -209,11 +210,12 @@ public class SetmealController {
         list = setmealService.list(lambdaQueryWrapper);
         if (list.isEmpty()) {
             // 如果没有的话，则直接缓存一个空集合，避免一直查询没有的套餐，减少数据库压力
-            redisTemplate.opsForValue().set(key,list, CACHE_NULL_TTL, TimeUnit.MINUTES);
+            // 给过期时间设置随机值，避免缓存雪崩
+            redisTemplate.opsForValue().set(key,list, CACHE_NULL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
             return null;
         }
-        // 7、有数据，则保存到redis中,并设置60分钟的有效时间
-        redisTemplate.opsForValue().set(key,list,CACHE_SETMEAL_TTL, TimeUnit.MINUTES);
+        // 7、有数据，则保存到redis中,并设置60-62分钟的有效时间
+        redisTemplate.opsForValue().set(key,list,CACHE_SETMEAL_TTL + RandomUtil.randomLong(3), TimeUnit.MINUTES);
         return R.success(list);
     }
 }
