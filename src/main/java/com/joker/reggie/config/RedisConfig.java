@@ -1,5 +1,8 @@
 package com.joker.reggie.config;
 
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
 import org.springframework.cache.annotation.CachingConfigurerSupport;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -13,11 +16,10 @@ public class RedisConfig extends CachingConfigurerSupport {
 
 
     /**
-     * 配置分布式锁
-     * @param redisConnectionFactory
+     * 配置Redisson
      * @return
      */
-    /*@Bean
+    @Bean
     public RedissonClient redissonClient(){
         // 配置类
         Config config = new Config();
@@ -25,7 +27,7 @@ public class RedisConfig extends CachingConfigurerSupport {
         config.useSingleServer().setAddress("redis://192.168.209.137:6379").setPassword("123123");
         // 创建客户端
         return Redisson.create(config);
-    }*/
+    }
 
     @Bean
     public RedisTemplate<Object,Object> redisTemplate(RedisConnectionFactory redisConnectionFactory){

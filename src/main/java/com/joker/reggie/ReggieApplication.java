@@ -5,9 +5,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.servlet.ServletComponentScan;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 @Slf4j
+@EnableAspectJAutoProxy(exposeProxy = true)
 @SpringBootApplication
 @ServletComponentScan
 @EnableTransactionManagement // 开启事务管理 现在默认已经开启了

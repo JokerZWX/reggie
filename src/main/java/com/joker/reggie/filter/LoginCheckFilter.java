@@ -73,6 +73,7 @@ public class LoginCheckFilter implements Filter {
         // 4.2、需要处理，判断当前的前台用户登录状态，如果已登录则直接放行
 //        Long userId = (Long) request.getSession().getAttribute("user");
         // 拿到登录的key
+//        String phone = "16644557788";
         String phone = request.getSession().getAttribute("phone").toString();
         String userKey = LOGIN_USER_KEY + phone;
         Long userId = (Long) redisTemplate.opsForValue().get(userKey);
